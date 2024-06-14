@@ -76,12 +76,12 @@ func (p *HTTPPool[K, V]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	//w.Header().Set("Content-Type", "application/octet-stream")
-	//w.Write(view.ByteSlice())
+	//w.Write(view)
 	data, err := json.Marshal(view)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Write(data)
 }
 
@@ -111,9 +111,11 @@ func (p *HTTPPool[K, V]) Pick(key K) (peer.Fetcher[K, V], bool) {
 	defer p.mu.Unlock()
 	addr := p.peers.Get(key)
 	slog.Info("[Pick]", "addr", addr, "p.addr", p.addr, "p.httpGetters[peer]", p.httpGetters[addr])
+	//fmt.Println(cmp.Equal(addr, p.addr))
 	//选择的节点不能是空和自身 选自己会一直调用自己
 	if !cmp.Equal(addr, p.addr) {
 		getter, ok := p.httpGetters[addr]
+		//fmt.Println(getter, ok)
 		return getter, ok
 	}
 	return nil, false
@@ -136,7 +138,7 @@ func (h *httpGetter[K, V]) Fetch(group string, key K) (value V, err error) {
 		url.QueryEscape(group),
 		url.QueryEscape(fmt.Sprint(key)),
 	)
-	// fmt.Println(u)
+	//fmt.Println(u)
 	res, err := http.Get(u)
 	if err != nil {
 		return

@@ -1,13 +1,16 @@
-package httpserver
+package main
 
 import (
+	"flag"
 	"fmt"
 	"kunCache/conf"
 	"kunCache/etcd"
+	grpcserver "kunCache/grpc"
+	httpserver "kunCache/http"
 	"log"
 	"log/slog"
 	"net/http"
-	"testing"
+	"strconv"
 	"time"
 
 	"kunCache/gcache"
@@ -36,7 +39,7 @@ func createGroup(name string) *gcache.Group[string, []byte] {
 // 启动缓存服务器：创建 HTTPPool，添加节点信息，注册到 g 中，启动 HTTP 服务
 
 func startCacheHTTPServer(addr, ip, port, protocol string, g *gcache.Group[string, []byte]) {
-	server := NewHTTPPool[string, []byte](addr, ip, port, protocol)
+	server := httpserver.NewHTTPPool[string, []byte](addr, ip, port, protocol)
 	addrs, err := etcd.DiscoverPeers(conf.GConfig.Prefix)
 	if err != nil {
 		log.Println(err)
@@ -47,6 +50,31 @@ func startCacheHTTPServer(addr, ip, port, protocol string, g *gcache.Group[strin
 	// 为 Group 注册服务 Picker
 	g.RegisterServer(server)
 	slog.Info("gcache is running at", "addr", addr)
+	// 启动服务
+	err = server.Start()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+// 启动缓存服务器：创建 GRPC，添加节点信息，注册到 g 中，启动 GRPC 服务
+func startCacheGRPCServer(addr, ip, port, protocol string, g *gcache.Group[string, []byte]) {
+	server, err := grpcserver.NewServer[string, []byte](addr, ip, port, protocol)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	addrs, err := etcd.DiscoverPeers(conf.GConfig.Prefix)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	// 将节点打到哈希环上
+	server.AddPeers(addrs...)
+	// 为 Group 注册服务 Picker
+	g.RegisterServer(server)
+	log.Println("groupcache is running at ", fmt.Sprintf("%v:%v", ip, port))
+
 	// 启动服务
 	err = server.Start()
 	if err != nil {
@@ -74,23 +102,25 @@ func startAPIServer(apiAddr string, g *gcache.Group[string, []byte]) {
 	log.Fatal(http.ListenAndServe(apiAddr[7:], nil))
 
 }
-func TestHttp(t *testing.T) {
+func main() {
 
-	//conf.Init("../conf/conf.json")
-	//go func() {
-	//	g := createGroup("ikun666")
-	//	go startAPIServer(conf.GConfig.ApiAddr, g)
-	//	startCacheHTTPServer("localhost:8000", "localhost", "8000", "HTTP", g)
-	//}()
-	//go func() {
-	//	g := createGroup("ikun666")
-	//	startCacheHTTPServer("localhost:8100", "localhost", "8100", "HTTP", g)
-	//}()
-	//go func() {
-	//	g := createGroup("ikun666")
-	//	startCacheHTTPServer("localhost:8200", "localhost", "8200", "HTTP", g)
-	//}()
-	//
-	//select {}
+	conf.Init("../conf/conf.json")
+	var port int
+	var api bool
+	var grpc bool
+	flag.IntVar(&port, "port", 8001, "Gcache server port")
+	flag.BoolVar(&api, "api", false, "Start a api server?")
+	flag.BoolVar(&grpc, "grpc", false, "use grpc/http")
+	flag.Parse()
+
+	g := createGroup("ikun666")
+	if api {
+		go startAPIServer(conf.GConfig.ApiAddr, g)
+	}
+	if grpc {
+		startCacheGRPCServer("localhost:"+strconv.Itoa(port), "localhost", strconv.Itoa(port), "GRPC", g)
+	} else {
+		startCacheHTTPServer("localhost:"+strconv.Itoa(port), "localhost", strconv.Itoa(port), "HTTP", g)
+	}
 
 }

@@ -99,6 +99,8 @@ func (g *Group[K, V]) load(key K) (V, error) {
 				}
 				slog.Info("[GCache] Failed to get from peer", "err", err)
 			}
+			slog.Info("[GCache] Failed to get from peer")
+			return g.getLocally(key)
 		}
 		return g.getLocally(key)
 	})
